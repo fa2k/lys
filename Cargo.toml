@@ -1,0 +1,14 @@
+[dependencies]
+paho-mqtt = { git = "https://github.com/eclipse/paho.mqtt.rust.git", branch = "master" }
+binary-layout = "2.1.0"
+rand = "0.8.4"
+gethostname = "0.2.2"
+
+[package]
+name = "lys"
+version = "0.1.0"
+authors = ["fa2k <pmb@fa2k.net>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
