@@ -6,7 +6,7 @@ use std::{
     time::Duration,
     net::SocketAddr,
     cmp,
-    fmt
+    fmt,
 };
 use binary_layout::prelude::*;
 use rand::Rng;
@@ -65,6 +65,7 @@ impl fmt::Display for RgbColor {
 }
 
 const BLACK: HsbColor = HsbColor {h: 0.0, s: 0.0, b: 0.0};
+const REFRESH_INTERVAL_SEC: u64 = 59;
 
 struct State {
     on_color: HsbColor
@@ -104,7 +105,7 @@ fn main() {
             start_universe: 1,
             num_pixels: 895,
             fps: 100
-        },
+        },/*
         Node{
             color_topic: "stue/artnet/bakHyller/farge".to_string(),
             address: "192.168.1.226:6454".parse().unwrap(),
@@ -118,7 +119,7 @@ fn main() {
             start_universe: 1,
             num_pixels: 1,
             fps: 30
-        },
+        },*/
     ];
 
     let topics: Vec<&String> = nodes.iter().map( |node| &node.color_topic ).collect();
@@ -135,35 +136,45 @@ fn main() {
                     .collect();
 
     let socket = UdpSocket::bind("0.0.0.0:0").expect("Unable to bind UDP client socket");
-    for msg in rx.iter() {
-        if let Some(msg) = msg {
+    loop {
+        let msg_result = rx.recv_timeout(Duration::new(REFRESH_INTERVAL_SEC, 0));
+   
+        if matches!(msg_result, Err(crossbeam_channel::RecvTimeoutError::Timeout)) {
             for i in 0..nodes.len() {
                 let node = &nodes[i];
-                if msg.topic() == node.color_topic {
-                    let data = get_channels_for_command(
-                        &mut states[i],
-                        node.num_pixels,
-                        &msg.payload_str()
-                    );
-                    send_data(&socket, node, &data);
-                }
+                let data = get_channels_for_command(
+                    &mut states[i],
+                    node.num_pixels,
+                    "REFRESH"
+                );
+                send_data(&socket, node, &data);
+                //println!("Send refresh");
             }
         }
         else {
-            println!("lys warning: They hung up. Will retry.")
+            let msg = msg_result.unwrap();
+            if let Some(msg) = msg {
+                for i in 0..nodes.len() {
+                    let node = &nodes[i];
+                    if msg.topic() == node.color_topic {
+                        let data = get_channels_for_command(
+                            &mut states[i],
+                            node.num_pixels,
+                            &msg.payload_str()
+                        );
+                        send_data(&socket, node, &data);
+                        //println!("Send color");
+                    }
+                }
+            }
         }
-    }
-
-    if cli.is_connected() {
-        cli.unsubscribe_many(&topics).unwrap();
-        cli.disconnect(None).unwrap();
     }
 }
 
 fn hsv2rgb(hsv: &HsbColor) -> RgbColor
 {
     //https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
-    if(hsv.s <= 0.0) {       // < is bogus, just shuts up warnings
+    if hsv.s <= 0.0 {       // < is bogus, just shuts up warnings
         return RgbColor{
             r: hsv.b,
             g: hsv.b,
@@ -176,7 +187,7 @@ fn hsv2rgb(hsv: &HsbColor) -> RgbColor
     let q = hsv.b * (1.0 - (hsv.s * ff));
     let t = hsv.b * (1.0 - (hsv.s * (1.0 - ff)));
 
-    match (hh as u64) {
+    match hh as u64 {
         0 =>
             RgbColor{
                 r: hsv.b,
@@ -214,45 +225,6 @@ fn hsv2rgb(hsv: &HsbColor) -> RgbColor
                 b: q
             }
     }
-    
-    
-    /*/let mut H: f64 = hsv.h.into();
-    let S: f64 = hsv.s.into();
-    let V: f64 = hsv.b.into();
-
-    if H == 360.0 {
-        H = 0.0;
-    }
-    else {
-        H = H / 60.0;
-    }
-    let fract = H - H.floor();
-
-    let P = V*(1. - S);
-    let Q = V*(1. - S*fract);
-    let T = V*(1. - S*(1. - fract));
-
-    if      0. <= H && H < 1. {
-        return RgbColor{r: V, g: T, b: P};
-    }
-    else if 1. <= H && H < 2. {
-        return RgbColor{r: Q, g: V, b: P};
-    }
-    else if 2. <= H && H < 3. {
-        return RgbColor{r: P, g: V, b: T};
-    }
-    else if 3. <= H && H < 4. {
-        return RgbColor{r: P, g: Q, b: V};
-    }
-    else if 4. <= H && H < 5. {
-        return RgbColor{r: T, g: P, b: V};
-    }
-    else if 5. <= H && H < 6. {
-        return RgbColor{r: V, g: P, b: Q};
-    }
-    else {
-        return RgbColor{r: 0.0, g: 0.0, b: 0.0};
-    }*/
 }
 
 fn gamma_convert(rgb: RgbColor) -> RgbColor {
@@ -306,7 +278,7 @@ fn string_to_color(text: &str) -> HsbColor {
 fn get_channels_for_command(state: &mut State, npixels: u16, msg: &str)
                          -> Vec<u8> {
     match msg {
-        "ON" =>  get_channels_dither(&state.on_color, npixels),
+        "ON" | "REFRESH" =>  get_channels_dither(&state.on_color, npixels),
         "OFF" => get_channels_dither(&BLACK, npixels),
         _ =>     {
             state.on_color = string_to_color(msg);

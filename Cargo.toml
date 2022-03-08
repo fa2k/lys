@@ -3,6 +3,7 @@ paho-mqtt = { git = "https://github.com/eclipse/paho.mqtt.rust.git", branch = "m
 binary-layout = "2.1.0"
 rand = "0.8.4"
 gethostname = "0.2.2"
+crossbeam-channel = "0.5.2"
 
 [package]
 name = "lys"
