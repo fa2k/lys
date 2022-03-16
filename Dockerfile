@@ -6,6 +6,6 @@ COPY Cargo.toml .
 COPY src src
 RUN cargo build --release
 
-FROM alpine:latest
+FROM rust:1.58
 COPY --from=build /lys/target/release/lys .
 CMD ["/lys"]
