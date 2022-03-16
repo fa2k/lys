@@ -7,5 +7,5 @@ COPY src src
 RUN cargo build --release
 
 FROM alpine:latest
-COPY --from=build /target/release/lys .
+COPY --from=build /lys/target/release/lys .
 CMD ["/lys"]
