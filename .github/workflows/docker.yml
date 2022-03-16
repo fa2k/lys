@@ -21,3 +21,6 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ghcr.io/fa2k/lys/lys:latest
+          cache-from: type=registry,ref=${{ ghcr.io/fa2k/lys/lys:latest }}
+          cache-to: type=inline
+
