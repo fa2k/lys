@@ -68,7 +68,8 @@ const BLACK: HsbColor = HsbColor {h: 0.0, s: 0.0, b: 0.0};
 const REFRESH_INTERVAL_SEC: u64 = 59;
 
 struct State {
-    on_color: HsbColor
+    on_color: HsbColor,
+    is_on: bool
 }
 
 fn main() {
@@ -132,7 +133,7 @@ fn main() {
 
 
     let mut states: Vec<State> = nodes.iter()
-                    .map( |_|  State { on_color: BLACK } )
+                    .map( |_|  State { on_color: BLACK, is_on: false } )
                     .collect();
 
     let socket = UdpSocket::bind("0.0.0.0:0").expect("Unable to bind UDP client socket");
@@ -142,7 +143,7 @@ fn main() {
         if matches!(msg_result, Err(crossbeam_channel::RecvTimeoutError::Timeout)) {
             for i in 0..nodes.len() {
                 let node = &nodes[i];
-                let data = get_channels_for_command(
+                let data = set_state_get_channels(
                     &mut states[i],
                     node.num_pixels,
                     "REFRESH"
@@ -157,7 +158,7 @@ fn main() {
                 for i in 0..nodes.len() {
                     let node = &nodes[i];
                     if msg.topic() == node.color_topic {
-                        let data = get_channels_for_command(
+                        let data = set_state_get_channels(
                             &mut states[i],
                             node.num_pixels,
                             &msg.payload_str()
@@ -275,15 +276,27 @@ fn string_to_color(text: &str) -> HsbColor {
     }
 }
 
-fn get_channels_for_command(state: &mut State, npixels: u16, msg: &str)
+fn set_state_get_channels(state: &mut State, npixels: u16, msg: &str)
                          -> Vec<u8> {
     match msg {
-        "ON" | "REFRESH" =>  get_channels_dither(&state.on_color, npixels),
-        "OFF" => get_channels_dither(&BLACK, npixels),
+        "REFRESH" => {
+        },
+        "ON" => {
+            state.is_on = false;
+        },
+        "OFF" => {
+            state.is_on = false;
+        },
         _ =>     {
             state.on_color = string_to_color(msg);
-            get_channels_dither(&state.on_color, npixels)
+            state.is_on = true;
         }
+    }
+    if state.is_on {
+        get_channels_dither(&state.on_color, npixels)
+    }
+    else {
+        get_channels_dither(&BLACK, npixels)
     }
 }
 
