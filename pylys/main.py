@@ -75,11 +75,13 @@ def make_segment(positions_array, start_index, start_point, end_point, count):
                                                 (endnp - startnp) * np.linspace(0, 1, num=count).reshape((count, 1))
 
 make_segment(physical_positions, 0,   [0,0.1,3], [0,4,3], 224)
-make_segment(physical_positions, 224, [1,0.1,3], [1,4,3], 224)
+make_segment(physical_positions, 224, [1,4,3], [1,0.1,3], 224)
 make_segment(physical_positions, 448, [2,0.1,3], [2,4,3], 224)
-make_segment(physical_positions, 672, [3,0.1,3], [3,4,3], 223)
+make_segment(physical_positions, 672, [3,4,3], [3,0.1,3], 223)
 
 make_segment(physical_positions, 895, [2,0,1], [3,0,1], 3)
+
+#make_segment(physical_positions, 898, [2,0,0.5], [3,0,0.5], 1)
 
 # Visual effects generation
 
@@ -167,7 +169,7 @@ class RadialFader(Layer):
                 ):
         self.from_layer = from_layer
         self.to_layer = to_layer
-        self.transition_time = soft / speed_meters_per_second
+        self.transition_time = soft
         distances = np.sqrt(np.sum((physical_positions - center_point) ** 2, axis=1))
         self.time_offsets = (distances / speed_meters_per_second) + start_time
         max_time = np.max(self.time_offsets)
@@ -305,8 +307,11 @@ class SceneController:
         self.on_layer = Fill(num_pixels, make_color_from_hsv(*start_color_hsv))
         self.off_layer = Fill(num_pixels, np.array([0, 0, 0]))
         self.root = self.off_layer
+        #self.mask_state = False
+        #self.mask_pixels = [898]#sorry
         self.num_pixels = num_pixels
         self.scene_gamma = scene_gamma
+        self.pixel_override = []
         self._apply_new_state(True, start_color_hsv, "normal")
     
     def set_color(self, str_payload):
@@ -322,8 +327,6 @@ class SceneController:
                 new_color[2] = min(1.0, new_color[2] + 0.01)
             elif str_payload == "DECREASE":
                 new_color[2] = max(0.0, new_color[2] - 0.01)
-                if self.hsv[2] == 0.0:
-                    new_power_state = False
             elif str_payload == "ON":
                 pass
             else:
@@ -339,6 +342,9 @@ class SceneController:
                         new_color = [max(0, min(1, x)) for x in (h2, s2, v2)]
                 except ValueError as e:
                     print(f"Recevied invalid color {str_payload}: '{e}'.")
+        if new_color[2] == 0.0:
+            new_power_state = False
+            new_color[2] = self.hsv[2] # Don't set color if blacking
         self._apply_new_state(new_power_state, new_color, self.mode)
 
     def set_mode(self, mode):
@@ -346,6 +352,7 @@ class SceneController:
 
     def set_power(self, power):
         self._apply_new_state(power == "ON", self.hsv, self.mode)
+
 
     def _apply_new_state(self, new_power_state, new_color, new_mode):
         #print("Applying", new_power_state, ",", new_color, ",", new_mode)
@@ -382,13 +389,13 @@ class SceneController:
         elif self.is_on != new_power_state:
             if new_mode == "night": #start fade from bedroom
                 center = np.array([0, 2.0, 3.0])
-                speed = 4
+                speed = 2
             else:
                 center = np.array([1.5, 2.0, 3.0])
-                speed = 8
+                speed = 4
             self.root = RadialFader(physical_positions, time.time(), 
                                 center, speed,
-                                self.root, new_layer, soft=2,
+                                self.root, new_layer, soft=1,
                                 direction_out=new_power_state)
         elif self.mode == new_mode: # just a colour change
             self.root = GlobalFader(time.time(), 1, self.root, new_layer)
@@ -403,7 +410,12 @@ class SceneController:
 
     def get_data(self, t):
         (data, self.root) = self.root.get_layer(t)
-        return data #** self.scene_gamma
+        #if self.mask_state:
+        #    data[self.mask_pixels,:] = np.array(self.hsv)
+        #else:
+        #    data[self.mask_pixels,:] = 0
+        return data ** self.scene_gamma
+
 
 scene = SceneController(num_pixels, start_color_hsv=(0.5, 0.5, 0.5), scene_gamma=2.1)
 output_dithering_adapter = StableSpatialDithering()
@@ -428,12 +440,15 @@ def on_message(client, state, msg):
     if str_payload == "EXIT":
         sys.exit(0)
     topic = msg.topic[len(f"{MQTT_TOPIC_BASE}/"):]
+    #print(topic, "|", str_payload)
     if topic == "color":
         scene.set_color(str_payload)
     elif topic == "mode":
         scene.set_mode(str_payload)
     elif topic == "power":
         scene.set_power(str_payload)
+    #elif topic == "mask1":
+    #    scene.set_masking(str_payload)
 
 client.on_message = on_message
 client.connect(MQTT_HOST, 1883, 60)
@@ -442,7 +457,7 @@ client.loop_start()
 
 #---------------------------
 
-preview_mode = True
+preview_mode = False
 
 if preview_mode:
     import pygame
