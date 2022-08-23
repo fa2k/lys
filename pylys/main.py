@@ -11,6 +11,7 @@ from turtle import speed
 import numpy as np
 from numpy.random import default_rng
 from paho.mqtt import client as mqtt
+import threading
 
 
 rng = default_rng()
@@ -307,11 +308,9 @@ class SceneController:
         self.on_layer = Fill(num_pixels, make_color_from_hsv(*start_color_hsv))
         self.off_layer = Fill(num_pixels, np.array([0, 0, 0]))
         self.root = self.off_layer
-        #self.mask_state = False
-        #self.mask_pixels = [898]#sorry
         self.num_pixels = num_pixels
         self.scene_gamma = scene_gamma
-        self.pixel_override = []
+        self.lock = threading.Lock()
         self._apply_new_state(True, start_color_hsv, "normal")
     
     def set_color(self, str_payload):
@@ -353,7 +352,6 @@ class SceneController:
     def set_power(self, power):
         self._apply_new_state(power == "ON", self.hsv, self.mode)
 
-
     def _apply_new_state(self, new_power_state, new_color, new_mode):
         #print("Applying", new_power_state, ",", new_color, ",", new_mode)
         if new_power_state != self.is_on or new_color != self.hsv or new_mode != self.mode:
@@ -362,17 +360,17 @@ class SceneController:
             else:
                 if new_mode == "normal": #TODO clouds
                     new_layer1 = Fill(self.num_pixels, make_color_from_hsv(*new_color))
-                    new_layer2 = ScrollingRainbow(physical_positions, np.array([0.5, 0, 0]), 10, new_color[-1])
+                    new_layer2 = ScrollingRainbow(physical_positions, np.array([0.5, 0, 0]), 20, new_color[-1])
                     new_layer = PlanarSplit(physical_positions, np.array([0,0,2]), np.array([0,0,1]),
                                 new_layer2, new_layer1)
                 if new_mode == "night": #TODO stars
                     new_layer1 = Fill(self.num_pixels, make_color_from_hsv(*new_color))
-                    new_layer2 = ScrollingRainbow(physical_positions, np.array([0.5, 0, 0]), 10, new_color[-1])
+                    new_layer2 = ScrollingRainbow(physical_positions, np.array([0.5, 0, 0]), 20, new_color[-1])
                     new_layer = PlanarSplit(physical_positions, np.array([0,0,2]), np.array([0,0,1]),
                                 new_layer2, new_layer1)
                 elif new_mode == "basic":
                     new_layer1 = Fill(self.num_pixels, make_color_from_hsv(*new_color))
-                    new_layer2 = ScrollingRainbow(physical_positions, np.array([0.5, 0, 0]), 10, new_color[-1])
+                    new_layer2 = ScrollingRainbow(physical_positions, np.array([0.5, 0, 0]), 20, new_color[-1])
                     new_layer = PlanarSplit(physical_positions, np.array([0,0,2]), np.array([0,0,1]),
                                 new_layer2, new_layer1)
                 elif new_mode == "cinema":
@@ -383,24 +381,24 @@ class SceneController:
                                             self.off_layer)
         else: # No change
             return
-
-        if "cinema" in [new_mode, self.mode]:
-            self.root = GlobalFader(time.time(), 4, self.root, new_layer)
-        elif self.is_on != new_power_state:
-            if new_mode == "night": #start fade from bedroom
-                center = np.array([0, 2.0, 3.0])
-                speed = 2
-            else:
-                center = np.array([1.5, 2.0, 3.0])
-                speed = 4
-            self.root = RadialFader(physical_positions, time.time(), 
-                                center, speed,
-                                self.root, new_layer, soft=1,
-                                direction_out=new_power_state)
-        elif self.mode == new_mode: # just a colour change
-            self.root = GlobalFader(time.time(), 1, self.root, new_layer)
-        else: # fallback
-            self.root = GlobalFader(time.time(), 1, self.root, new_layer)
+        with self.lock:
+            if "cinema" in [new_mode, self.mode]:
+                self.root = GlobalFader(time.time(), 4, self.root, new_layer)
+            elif self.is_on != new_power_state:
+                if new_mode == "night": #start fade from bedroom
+                    center = np.array([0, 2.0, 3.0])
+                    speed = 2
+                else:
+                    center = np.array([1.5, 2.0, 3.0])
+                    speed = 4
+                self.root = RadialFader(physical_positions, time.time(), 
+                                    center, speed,
+                                    self.root, new_layer, soft=1,
+                                    direction_out=new_power_state)
+            elif self.mode == new_mode: # just a colour change
+                self.root = GlobalFader(time.time(), 1, self.root, new_layer)
+            else: # fallback
+                self.root = GlobalFader(time.time(), 1, self.root, new_layer)
 
         if new_power_state:
             self.on_layer = new_layer
@@ -409,7 +407,8 @@ class SceneController:
         self.mode = new_mode
 
     def get_data(self, t):
-        (data, self.root) = self.root.get_layer(t)
+        with self.lock:
+            (data, self.root) = self.root.get_layer(t)
         #if self.mask_state:
         #    data[self.mask_pixels,:] = np.array(self.hsv)
         #else:
