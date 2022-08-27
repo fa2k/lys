@@ -12,6 +12,7 @@ import numpy as np
 from numpy.random import default_rng
 from paho.mqtt import client as mqtt
 import threading
+import opensimplex
 
 
 rng = default_rng()
@@ -86,7 +87,7 @@ make_segment(physical_positions, 895, [2,0,1], [3,0,1], 3)
 
 # Visual effects generation
 
-def make_color_from_hsv(h : float, s : float, v : float):
+def hsv_to_rgb_array(h : float, s : float, v : float):
     return np.array(colorsys.hsv_to_rgb(h, s, v), dtype=np.float32)
 
 
@@ -143,8 +144,31 @@ class PlanarSplit(Layer):
         return (np.where(self.mask, up, dn), self)
 
 
+opensimplex.seed(1337)
 class Clouds(Layer):
-    pass
+
+    starttime = 0
+
+    def __init__(self, physical_positions : np.array, rgb : np.array):
+        self.physical_positions = physical_positions / physical_positions.max(axis=0)
+        self.rgb = rgb
+        self.buffer = np.zeros(self.physical_positions.shape)
+
+    def get_layer(self, t: float):
+        if Clouds.starttime == 0:
+            Clouds.starttime = t
+        tpar = (t - Clouds.starttime) / (24*60*60)
+
+        self.buffer[:, 2] = self.rgb[2]
+        print(self.physical_positions[:, 0].shape)
+        self.whiteclouds = opensimplex.noise3array(
+            self.physical_positions[:, 0],
+            self.physical_positions[:, 1],
+            self.physical_positions[:, 2] + tpar
+        )
+        minrg = min(*self.rgb[0:2])
+        self.buffer[:, 0:2] = (self.whiteclouds + 1) * minrg
+        return (self.buffer, self)
 
 
 class Fill(Layer):
@@ -298,6 +322,7 @@ class StableSpatialDithering:
 
 #-----------SETUP-----------
 
+
 # Root scene controller manages the layer tree
 # Custom undocumented code is just for me
 class SceneController:
@@ -305,12 +330,12 @@ class SceneController:
         self.is_on = False
         self.mode = None
         self.hsv = start_color_hsv
-        self.on_layer = Fill(num_pixels, make_color_from_hsv(*start_color_hsv))
+        self.on_layer = Fill(num_pixels, hsv_to_rgb_array(*start_color_hsv))
         self.off_layer = Fill(num_pixels, np.array([0, 0, 0]))
         self.root = self.off_layer
         self.num_pixels = num_pixels
         self.scene_gamma = scene_gamma
-        self.lock = threading.Lock()
+        self.lock_event = threading.Condition()
         self._apply_new_state(True, start_color_hsv, "normal")
     
     def set_color(self, str_payload):
@@ -352,6 +377,12 @@ class SceneController:
     def set_power(self, power):
         self._apply_new_state(power == "ON", self.hsv, self.mode)
 
+    def _make_part_scene(self, physical_positions, brightness):
+        if brightness <= 0.2:
+            return ScrollingRainbow(physical_positions, np.array([2, 0, 0]), 300, brightness)
+        else:
+            return ScrollingRainbow(physical_positions, np.array([0.5, 0, 0]), 20, brightness)
+
     def _apply_new_state(self, new_power_state, new_color, new_mode):
         #print("Applying", new_power_state, ",", new_color, ",", new_mode)
         if new_power_state != self.is_on or new_color != self.hsv or new_mode != self.mode:
@@ -359,29 +390,30 @@ class SceneController:
                 new_layer = self.off_layer
             else:
                 if new_mode == "normal": #TODO clouds
-                    new_layer1 = Fill(self.num_pixels, make_color_from_hsv(*new_color))
-                    new_layer2 = ScrollingRainbow(physical_positions, np.array([0.5, 0, 0]), 20, new_color[-1])
+                    new_layer1 = Fill(self.num_pixels, hsv_to_rgb_array(*new_color))
+                    #new_layer1 = Clouds(physical_positions, hsv_to_rgb_array(*new_color))
+                    new_layer2 = self._make_part_scene(physical_positions, new_color[-1])
                     new_layer = PlanarSplit(physical_positions, np.array([0,0,2]), np.array([0,0,1]),
                                 new_layer2, new_layer1)
                 if new_mode == "night": #TODO stars
-                    new_layer1 = Fill(self.num_pixels, make_color_from_hsv(*new_color))
-                    new_layer2 = ScrollingRainbow(physical_positions, np.array([0.5, 0, 0]), 20, new_color[-1])
+                    new_layer1 = Fill(self.num_pixels, hsv_to_rgb_array(*new_color))
+                    new_layer2 = self._make_part_scene(physical_positions, new_color[-1])
                     new_layer = PlanarSplit(physical_positions, np.array([0,0,2]), np.array([0,0,1]),
                                 new_layer2, new_layer1)
                 elif new_mode == "basic":
-                    new_layer1 = Fill(self.num_pixels, make_color_from_hsv(*new_color))
-                    new_layer2 = ScrollingRainbow(physical_positions, np.array([0.5, 0, 0]), 20, new_color[-1])
+                    new_layer1 = Fill(self.num_pixels, hsv_to_rgb_array(*new_color))
+                    new_layer2 = self._make_part_scene(physical_positions, new_color[-1])
                     new_layer = PlanarSplit(physical_positions, np.array([0,0,2]), np.array([0,0,1]),
                                 new_layer2, new_layer1)
                 elif new_mode == "cinema":
                     new_layer = LinearGradient(physical_positions, 
                                             np.array([0, 4, 0]),
                                             np.array([0, -1, 0]),
-                                            Fill(self.num_pixels, make_color_from_hsv(*new_color)),
+                                            Fill(self.num_pixels, hsv_to_rgb_array(*new_color)),
                                             self.off_layer)
         else: # No change
             return
-        with self.lock:
+        with self.lock_event:
             if "cinema" in [new_mode, self.mode]:
                 self.root = GlobalFader(time.time(), 4, self.root, new_layer)
             elif self.is_on != new_power_state:
@@ -399,6 +431,8 @@ class SceneController:
                 self.root = GlobalFader(time.time(), 1, self.root, new_layer)
             else: # fallback
                 self.root = GlobalFader(time.time(), 1, self.root, new_layer)
+            if new_power_state:
+                self.lock_event.notify_all()
 
         if new_power_state:
             self.on_layer = new_layer
@@ -406,8 +440,22 @@ class SceneController:
         self.hsv = new_color
         self.mode = new_mode
 
+    def wait_for_update(self, time_limit):
+        """
+        Wait while the output is guaranteed to be copnstant.
+
+        Returns approximately the time waited, regardless if it was interrupted
+        or not.
+        """
+        t0 = time.time()
+        with self.lock_event:
+            if self.root == self.off_layer:
+                self.lock_event.wait(timeout=time_limit)
+                return time.time() - t0
+            return 0
+
     def get_data(self, t):
-        with self.lock:
+        with self.lock_event:
             (data, self.root) = self.root.get_layer(t)
         #if self.mask_state:
         #    data[self.mask_pixels,:] = np.array(self.hsv)
@@ -490,38 +538,24 @@ while True:
     t = time.time()
 
     output_buffer = output_dithering_adapter.next(scene.get_data(t))
-    #output_buffer = (scene.get_data(t) * 255).astype(np.uint8).flatten()
-    do_send_output = True
-    if np.array_equal(output_buffer, prev_output_buffer):
-        equal_frames_count += 1
-        if equal_frames_count < STATIC_OUTPUT_SKIP_N_FRAMES:
-            do_send_output = False
-        else:
-            equal_frames_count = 0
-    else:
-        equal_frames_count = 0
-    prev_output_buffer = output_buffer
+    for i, node in enumerate(output_nodes):
+        if node.frame_skipping:
+            if outputs_frame_skipping[i] == node.frame_skipping:
+                outputs_frame_skipping[i] = 0
+            else:
+                outputs_frame_skipping[i] += 1
+                continue
 
-    if do_send_output:
-        for i, node in enumerate(output_nodes):
-            if node.frame_skipping:
-                if outputs_frame_skipping[i] == node.frame_skipping:
-                    outputs_frame_skipping[i] = 0
-                else:
-                    outputs_frame_skipping[i] += 1
-                    continue
+        packet_data = make_packet(
+            output_buffer[node.buffer_index:node.buffer_index+node.data_len].tobytes(),
+            node.universe
+            )
+        if not preview_mode:
+            output_socket.sendto(packet_data, (node.address, node.port))
 
-            packet_data = make_packet(
-                output_buffer[node.buffer_index:node.buffer_index+node.data_len].tobytes(),
-                node.universe
-                )
-            if not preview_mode:
-                output_socket.sendto(packet_data, (node.address, node.port))
-
-        if preview_mode:
-            show_preview(output_buffer)
+    if preview_mode:
+        show_preview(output_buffer)
 
     dt = t - lasttime
     time.sleep(max(0, 1 / TARGET_FPS - dt))
-    lasttime = t
-
+    lasttime = t + scene.wait_for_update(STATIC_OUTPUT_SKIP_N_FRAMES / TARGET_FPS)
