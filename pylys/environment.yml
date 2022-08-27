@@ -6,3 +6,7 @@ dependencies:
   - python>=3.7
   - numpy
   - paho-mqtt
+  - pip
+  - pip:
+    - pygame # only needed for preview mode
+    - opensimplex
