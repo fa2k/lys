@@ -247,7 +247,7 @@ class Stars(Layer):
     The average color should be quite dark in order for this to work."""
     def __init__(self, size_in_pixels : int, color_rgb, 
                         fraction_of_lit_stars=0.35,
-                        twinkle_interval=300,
+                        twinkle_interval=150,
                         twinkle_duration=0.2):
         rng = np.random.default_rng()
         self.bright_pixels_indexes = np.asarray(
@@ -632,7 +632,7 @@ def make_heavenly_waves(physical_positions, color):
                             [0.9, 0.8, 0.0],
                             [0.8, 1, 0.0]
                         ][:len(waves)]).transpose(),
-                        wave_speeds=np.array([0.01, 0.024, 0.02][:len(waves)])
+                        wave_speeds=np.array([0.02, 0.048, 0.04][:len(waves)])
                 )
 
 
