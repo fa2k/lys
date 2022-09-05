@@ -9,4 +9,3 @@ dependencies:
   - pip
   - pip:
     - pygame # only needed for preview mode
-    - opensimplex
