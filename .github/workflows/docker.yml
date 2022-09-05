@@ -1,4 +1,4 @@
-on: [push]
+on: [] # [push]
 jobs:
   docker-img:
     name: Create docker image
