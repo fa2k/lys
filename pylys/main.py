@@ -624,15 +624,20 @@ def make_heavenly_waves(physical_positions, color):
 
     #print("color", color, "backgrd", color_remain)
 
-    # Background is the remaining colour
-    return Waves(physical_positions,
-                        wave_colors=np.hstack(waves + [color_remain]),
-                        wave_vectors=np.array([
-                            [0.9, 0.8, 0],
+    vectors = np.array([
+                            [0.9, 1.8, 0],
                             [0.9, 0.8, 0.0],
                             [0.8, 1, 0.0]
-                        ][:len(waves)]).transpose(),
-                        wave_speeds=np.array([0.02, 0.048, 0.04][:len(waves)])
+              ]).transpose()
+    speeds = np.array([0.02, 0.048, 0.04])
+    waves = np.hstack(waves)
+    nonzero_color = np.sum(waves, axis=0) > 0
+    #print(nonzero_color)
+    # Background is the remaining colour
+    return Waves(physical_positions,
+                        wave_colors=np.hstack([waves[:,nonzero_color],color_remain]),
+                        wave_vectors=vectors[:,nonzero_color],
+                        wave_speeds=speeds[nonzero_color]
                 )
 
 
