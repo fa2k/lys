@@ -8,6 +8,7 @@ import math
 from dataclasses import dataclass
 from collections.abc import Sequence
 import colorsys
+from sklearn import linear_model
 import numpy as np
 from numpy.random import default_rng
 from paho.mqtt import client as mqtt

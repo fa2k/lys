@@ -7,5 +7,6 @@ dependencies:
   - numpy
   - paho-mqtt
   - pip
+  - scikit-learn
   - pip:
     - pygame # only needed for preview mode
