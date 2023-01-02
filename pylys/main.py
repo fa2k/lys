@@ -433,7 +433,7 @@ class StableSpatialDithering:
 # Root scene controller manages the layer tree
 # Custom undocumented code is just for me
 class SceneController:
-    def __init__(self, num_pixels, start_color_hsv=(0.8, 0.5, 0.3), scene_gamma=1):
+    def __init__(self, num_pixels, start_power_on=False, start_color_hsv=(0.8, 0.5, 0.3), scene_gamma=1):
         self.is_on = False
         self.mode = None
         self.hsv = start_color_hsv
@@ -443,7 +443,7 @@ class SceneController:
         self.num_pixels = num_pixels
         self.scene_gamma = scene_gamma
         self.lock_event = threading.Condition()
-        self._apply_new_state(True, start_color_hsv, sys.argv[1] if len(sys.argv) > 1 else "normal")
+        self._apply_new_state(start_power_on, start_color_hsv, sys.argv[1] if len(sys.argv) > 1 else "normal")
     
     def set_color(self, str_payload):
         if str_payload == "OFF":
