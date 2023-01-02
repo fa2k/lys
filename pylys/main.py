@@ -247,9 +247,9 @@ class Stars(Layer):
     
     The average color should be quite dark in order for this to work."""
     def __init__(self, size_in_pixels : int, color_rgb, 
-                        fraction_of_lit_stars=0.35,
+                        fraction_of_lit_stars=0.15,
                         twinkle_interval=150,
-                        twinkle_duration=0.2):
+                        twinkle_duration=0.1):
         rng = np.random.default_rng()
         self.bright_pixels_indexes = np.asarray(
                 rng.random(size=(size_in_pixels,)) < fraction_of_lit_stars
@@ -496,9 +496,9 @@ class SceneController:
             if not new_power_state:
                 new_layer = self.off_layer
             else:
-                if new_mode == "wild": #TODO clouds
+                if new_mode == "wild":
                     new_layer = WildWaves(physical_positions)
-                elif new_mode == "night": #TODO stars
+                elif new_mode == "night":
                     new_layer1 = Stars(self.num_pixels, hsv_to_rgb_array(*new_color))
                     new_layer2 = self._make_part_scene(physical_positions, new_color[-1])
                     new_layer = PlanarSplit(physical_positions, np.array([0,0,2]), np.array([0,0,1]),
@@ -531,7 +531,7 @@ class SceneController:
                     soft = 1
                 else:
                     center = np.array([1.5, 2.0, 3.0])
-                    speed = 4
+                    speed = 3
                     soft = 0.1
                 self.root = RadialFader(physical_positions, time.time(), 
                                     center, speed,
@@ -642,7 +642,7 @@ def make_heavenly_waves(physical_positions, color):
                 )
 
 
-scene = SceneController(num_pixels, start_color_hsv=(0.5, 0.5, 1.0), scene_gamma=2.1)
+scene = SceneController(num_pixels, start_color_hsv=(0.5, 0.5, 1.0), scene_gamma=2.0)
 output_dithering_adapter = StableSpatialDithering()
 
 #----- MQTT Command loop --------
