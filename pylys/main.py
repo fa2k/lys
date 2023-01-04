@@ -642,7 +642,7 @@ def make_heavenly_waves(physical_positions, color):
                 )
 
 
-scene = SceneController(num_pixels, start_color_hsv=(0.5, 0.5, 1.0), scene_gamma=2.0)
+scene = SceneController(num_pixels, start_color_hsv=(0.5, 0.5, 1.0), scene_gamma=2.1)
 output_dithering_adapter = StableSpatialDithering()
 
 #----- MQTT Command loop --------
