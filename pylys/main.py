@@ -13,7 +13,7 @@ import numpy as np
 from numpy.random import default_rng
 from paho.mqtt import client as mqtt
 import threading
-
+from output_adapters import *
 
 rng = default_rng()
 
@@ -43,28 +43,31 @@ output_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 class ArtNetNode:
     address: str
     universe: int
-    buffer_index: int
-    data_len: int
+    pixel_index: int
+    num_pixels: int
+    output_adapter: object
     port: int = 6454
     # Skip this many frames between sending to reduce frame rate
     frame_skipping: int = 0
 
-
+# Define Art-Net universes. The parameters specify the pixels to output. The pixel data is converted
+# to bytes by the output_adapter.
 output_nodes = [
-    # Taklys totalt 895 RGB pixels
-    ArtNetNode("192.168.1.224", 1,    0, 510),
-    ArtNetNode("192.168.1.224", 2,  510, 510),
-    ArtNetNode("192.168.1.224", 3, 1020, 510),
-    ArtNetNode("192.168.1.224", 4, 1530, 510),
-    ArtNetNode("192.168.1.224", 5, 2040, 510),
-    ArtNetNode("192.168.1.224", 6, 2550, 153),
+    # Taklys totalt 901 RGB pixels @ 4 bytes per pixel
+    ArtNetNode("192.168.1.224", 1,    0, 128, GlobalDimmerFourByte()),
+    ArtNetNode("192.168.1.224", 2,  128, 128, GlobalDimmerFourByte()),
+    ArtNetNode("192.168.1.224", 3,  256, 128, GlobalDimmerFourByte()),
+    ArtNetNode("192.168.1.224", 4,  384, 128, GlobalDimmerFourByte()),
+    ArtNetNode("192.168.1.224", 5,  512, 128, GlobalDimmerFourByte()),
+    ArtNetNode("192.168.1.224", 6,  640, 128, GlobalDimmerFourByte()),
+    ArtNetNode("192.168.1.224", 7,  768, 128, GlobalDimmerFourByte()),
+    ArtNetNode("192.168.1.224", 8,  896,   5, GlobalDimmerFourByte()),
     # Hyllelys 3 pixels
-    ArtNetNode("192.168.1.226", 0, 2703,   9, frame_skipping=2),
+    ArtNetNode("192.168.1.226", 0,  901,   3, StableSpatialDithering(), frame_skipping=2),
 ]
 outputs_frame_skipping = np.zeros(len(output_nodes))
 
-buffer_size = sum(node.data_len for node in output_nodes)
-num_pixels = buffer_size // 3
+num_pixels = sum([node.num_pixels for node in output_nodes])
 
 # Define 3D position of each pixel
 physical_positions = np.zeros((num_pixels, 3), dtype=np.float64)
@@ -371,62 +374,6 @@ class GlobalFader(Layer):
             return self
 
 
-class StableSpatialDithering:
-    """Class to turn float RGB values in [0,1] into integers in [0,255].
-    It implements a random rounding effect, but tries to achieve the
-    following:
-    * The overall average values across all channels of a colour in the
-    output are close to the target overall values.
-    * The rounding of any particular pixels stays the same in subsequent
-    calls.
-
-    It is not a Layer, but intended to run as the last step before generating
-    packets. It is not aware of physical positions, only operates on global
-    averages.
-    """
-    
-    def __init__(self, rng=None):
-        self.last_outputs = np.array(0)
-        self.last_stresses = np.array(0)
-        self.rng = rng or np.random.default_rng()
-
-    def next(self, data):
-        targets = data * 255
-
-        # If the outputs are now wrong by >1 unit, plus or minus, we
-        # just start over and discard any stress/state. The 
-        # "last outputs" are modified so the following algorithm can
-        # randomise the rounding, from scratch.
-        is_wrong_output = np.abs(targets - self.last_outputs) > 1
-        if len(self.last_outputs.shape) > 0:
-            np.putmask(self.last_outputs, is_wrong_output, np.floor(targets))
-            np.putmask(self.last_stresses, is_wrong_output, 0)
-        else:#dbg
-            self.last_outputs = np.zeros(targets.shape)
-
-        stresses = targets - self.last_outputs
-        # Determine if the outputs should change when the target changes. 
-        # Probability of changing the output, if the target changes in the
-        # same direction as the last stress:
-        # P(change) = (stresse - last_stresses) / interval_remain
-        stress_increases = np.maximum(np.sign(stresses) * (stresses - self.last_stresses), 0)
-
-        # Remaining interval until crossing over to a new integer value,
-        # taken relative to the last outputs.
-        interval_remain = 1 - np.abs(self.last_stresses)
-
-        increments = np.sign(stresses) * (
-            interval_remain * self.rng.random(targets.shape) < stress_increases
-        )
-
-        new_values = self.last_outputs + increments
-        self.last_outputs = new_values
-        self.last_stresses = targets - new_values
-        return new_values.flatten().astype(np.uint8)
-
-
-
-
 #-----------SETUP-----------
 
 
@@ -643,7 +590,7 @@ def make_heavenly_waves(physical_positions, color):
 
 
 scene = SceneController(num_pixels, start_color_hsv=(0.5, 0.5, 1.0), scene_gamma=2.1)
-output_dithering_adapter = StableSpatialDithering()
+output_adapter = StableSpatialDithering()
 
 #----- MQTT Command loop --------
 MQTT_HOST = "192.168.1.8"
@@ -715,8 +662,9 @@ equal_frames_count = 0
 while True:
     t = time.time()
 
-    output_buffer = output_dithering_adapter.next(scene.get_data(t))
+    scene_data = scene.get_data(t)
     for i, node in enumerate(output_nodes):
+        output_buffer = node.output_adapter.next(scene_data[node.pixel_index:node.pixel_index+node.num_pixels])
         if node.frame_skipping:
             if outputs_frame_skipping[i] == node.frame_skipping:
                 outputs_frame_skipping[i] = 0
@@ -725,7 +673,7 @@ while True:
                 continue
 
         packet_data = make_packet(
-            output_buffer[node.buffer_index:node.buffer_index+node.data_len].tobytes(),
+            output_buffer.tobytes(),
             node.universe
             )
         if not preview_mode:
