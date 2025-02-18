@@ -52,19 +52,33 @@ class ArtNetNode:
 
 # Define Art-Net universes. The parameters specify the pixels to output. The pixel data is converted
 # to bytes by the output_adapter.
+#output_nodes = [
+#    # Taklys totalt 901 RGB pixels @ 4 bytes per pixel
+#    ArtNetNode("192.168.1.224", 1,    0, 128, GlobalDimmerFourByte()),
+#    ArtNetNode("192.168.1.224", 2,  128, 128, GlobalDimmerFourByte()),
+#    ArtNetNode("192.168.1.224", 3,  256, 128, GlobalDimmerFourByte()),
+#    ArtNetNode("192.168.1.224", 4,  384, 128, GlobalDimmerFourByte()),
+#    ArtNetNode("192.168.1.224", 5,  512, 128, GlobalDimmerFourByte()),
+#    ArtNetNode("192.168.1.224", 6,  640, 128, GlobalDimmerFourByte()),
+#    ArtNetNode("192.168.1.224", 7,  768, 128, GlobalDimmerFourByte()),
+#    ArtNetNode("192.168.1.224", 8,  896,   5, GlobalDimmerFourByte()),
+#    # Hyllelys 3 pixels
+#    ArtNetNode("192.168.1.226", 0,  901,   3, StableSpatialDithering(), frame_skipping=2),
+#]
+
 output_nodes = [
-    # Taklys totalt 901 RGB pixels @ 4 bytes per pixel
-    ArtNetNode("192.168.1.224", 1,    0, 128, GlobalDimmerFourByte()),
-    ArtNetNode("192.168.1.224", 2,  128, 128, GlobalDimmerFourByte()),
-    ArtNetNode("192.168.1.224", 3,  256, 128, GlobalDimmerFourByte()),
-    ArtNetNode("192.168.1.224", 4,  384, 128, GlobalDimmerFourByte()),
-    ArtNetNode("192.168.1.224", 5,  512, 128, GlobalDimmerFourByte()),
-    ArtNetNode("192.168.1.224", 6,  640, 128, GlobalDimmerFourByte()),
-    ArtNetNode("192.168.1.224", 7,  768, 128, GlobalDimmerFourByte()),
-    ArtNetNode("192.168.1.224", 8,  896,   5, GlobalDimmerFourByte()),
+    # Taklys totalt 895 RGB pixels
+    ArtNetNode("192.168.1.224", 1,    0, 170, StableSpatialDithering()),
+    ArtNetNode("192.168.1.224", 2,  170, 170, StableSpatialDithering()),
+    ArtNetNode("192.168.1.224", 3,  340, 170, StableSpatialDithering()),
+    ArtNetNode("192.168.1.224", 4,  510, 170, StableSpatialDithering()),
+    ArtNetNode("192.168.1.224", 5,  690, 170, StableSpatialDithering()),
+    ArtNetNode("192.168.1.224", 6,  850,  51, StableSpatialDithering()),
     # Hyllelys 3 pixels
     ArtNetNode("192.168.1.226", 0,  901,   3, StableSpatialDithering(), frame_skipping=2),
 ]
+
+
 outputs_frame_skipping = np.zeros(len(output_nodes))
 
 num_pixels = sum([node.num_pixels for node in output_nodes])
